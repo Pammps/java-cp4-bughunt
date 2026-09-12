@@ -7,5 +7,8 @@ package br.com.fiap.streamfiap.model;
  */
 public interface Promocionavel {
 
+    /** Multiplicador equivalente a 20% de desconto. */
+    double MULTIPLICADOR_PROMOCAO = 0.8;
+
     double aplicarPromocao(double preco);
 }

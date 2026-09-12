@@ -32,9 +32,8 @@ public abstract class Conteudo {
         this.disponivel = disponivel;
     }
 
-    public double calcularPrecoAluguel() {
-        return 9.90;
-    }
+    // cada tipo de conteudo tem sua propria regra de preco
+    public abstract double calcularPrecoAluguel();
 
     public double calcularPrecoPromocional() {
         if (this instanceof Promocionavel) {
