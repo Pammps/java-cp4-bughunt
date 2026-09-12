@@ -15,6 +15,12 @@ public class Documentario extends Conteudo {
         this.tema = tema;
     }
 
+    // documentario e gratuito e nao participa de promocao
+    @Override
+    public double calcularPrecoAluguel() {
+        return 0.0;
+    }
+
     public String getTema() { return tema; }
     public void setTema(String tema) { this.tema = tema; }
 }
