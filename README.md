@@ -2,7 +2,7 @@
 
 ## Identificação
 
-**Grupo:** _(preencher)_
+**Grupo:**
 
 | Integrante | RM | Turma |
 |---|---|---|
