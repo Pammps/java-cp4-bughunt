@@ -6,10 +6,7 @@
 
 | Integrante | RM | Turma |
 |---|---|---|
-| | | |
-| | | |
-| | | |
-| | | |
+| Pamella Souza da Silva Ferreira| 566172 | 2CCPH|
 
 | Campo | |
 |---|---|
@@ -52,102 +49,27 @@
 
 ### 1. Injeção de dependência (Aula 13)
 
-`ConteudoRepository` é uma **interface** — não existe nenhuma classe nossa que a implemente,
-então `new ConteudoRepository()` nem compilaria. Quem cria a implementação é o Spring Data JPA,
-que gera uma classe em tempo de execução a partir da assinatura dos métodos.
-
-Quando o Spring sobe, ele monta um container com esses objetos (os beans). Ao encontrar o
-`@Autowired` no `ConteudoController`, ele pega o bean já pronto e coloca no atributo.
-Esse bean não é só o repositório "cru": vem embrulhado com transação, conexão com o Oracle
-configurada pelo `application.properties` e tratamento de erro. Com um `new` comum eu teria
-um objeto solto, sem conexão nenhuma e sem transação, e ainda teria que passar a conexão na mão
-para cada controller. A injeção também facilita trocar a implementação depois sem mexer no controller.
+O Spring cria e gerencia uma implementação dos repositories usados pelos controllers. Com o `@Autowired`, ele injeta essa instância já configurada para acessar o banco. Não seria possível usar `new ConteudoRepository()`, pois ele é uma interface e sua implementação é gerada pelo Spring. Assim, métodos como `save`, `findAll` e `findById` ficam disponíveis sem implementação manual.
 
 ### 2. JDBC vs Spring Data JPA (Aulas 12 e 13)
 
-No `ProdutoDAO` da Aula 12 a gente escrevia o SQL na mão, abria `Connection`, montava
-`PreparedStatement`, setava cada parâmetro pela posição, percorria o `ResultSet` campo a campo
-montando o objeto e ainda tinha que fechar tudo no `finally`. Eram umas 20 linhas por operação.
-
-O `ConteudoRepository` herda de `JpaRepository<Conteudo, Long>` e já ganha `save`, `findAll`,
-`findById` e `deleteById` prontos. O JPA usa o mapeamento das anotações (`@Entity`, `@Id`,
-`@Table`) para saber qual tabela e quais colunas usar, e gera o SQL sozinho.
-
-O `findByCategoria` funciona sem implementação por causa dos *query methods*: o Spring lê o nome
-do método, quebra em "findBy" + "Categoria", encontra o atributo `categoria` na entidade `Conteudo`
-e monta o `select ... where categoria = ?`. Foi exatamente o que usei para corrigir o bug10.
-
-O JDBC ainda ganha quando a consulta é muito específica ou precisa de otimização fina, porque
-lá eu controlo o SQL exato que vai ao banco — com JPA eu dependo do que o Hibernate gera.
+No JDBC, é necessário criar a conexão, escrever o SQL, executar o comando e tratar o `ResultSet`. O Spring Data JPA automatiza essas tarefas e já fornece as operações básicas de CRUD. O método `findByCategoria` funciona porque o Spring interpreta seu nome e cria a consulta usando o atributo `categoria`. O JDBC ainda pode ser útil quando é necessário ter mais controle sobre consultas específicas.
 
 ### 3. Exceções checked vs unchecked (Aula 11)
 
-`ClassificacaoIndicativaException extends Exception`, ou seja, é **checked**: o compilador obriga
-quem chama a tratar ou declarar. Por isso o `Usuario.alugar` tem `throws ClassificacaoIndicativaException`
-e o `AluguelController` repete esse `throws`. As outras três (`ConteudoNaoEncontradoException`,
-`CreditosInsuficientesException`, `ConteudoIndisponivelException`) estendem `RuntimeException`,
-são **unchecked** e sobem sozinhas sem precisar declarar nada.
-
-O bug não era o tipo dela, e sim que o `GlobalExceptionHandler` tinha `@ExceptionHandler` para
-as outras três e nenhum para essa. Sem handler, o Spring caía no erro padrão e devolvia 500,
-e a mensagem que a exceção carregava nunca chegava ao cliente.
-
-Corrigi adicionando `@ExceptionHandler(ClassificacaoIndicativaException.class)`, que devolve
-status 422 com `{"erro": "Usuário de 12 anos não pode assistir a ..."}`. O `@RestControllerAdvice`
-funciona para os dois tipos: o que decide se a mensagem chega é existir o handler, não ser checked
-ou unchecked.
+Uma exceção checked, que herda de `Exception`, precisa ser tratada ou declarada com `throws`. Já uma unchecked, que herda de `RuntimeException`, pode se propagar até o tratamento global. No projeto, alterei a `ClassificacaoIndicativaException` e adicionei seu tratamento no `GlobalExceptionHandler`. Dessa forma, a API passou a retornar uma mensagem clara quando a idade do usuário não permite o aluguel.
 
 ### 4. Sobrescrita vs sobrecarga (Aula 7)
 
-A `Serie` tinha `public double calcularPrecoAluguel(double desconto)`. Como a assinatura inclui os
-parâmetros, esse método com um `double` a mais é um método **novo** (sobrecarga), e não a
-sobrescrita do `calcularPrecoAluguel()` sem parâmetro da classe `Conteudo`. Compilava sem nenhum
-aviso, e o parâmetro `desconto` nem era usado dentro do método.
-
-Na hora do aluguel, `conteudo.calcularPrecoAluguel()` chamava o método sem parâmetro — que só
-existia em `Conteudo` — e a série saía por R$ 9,90 fixo, ignorando as temporadas.
-
-Se o método tivesse `@Override`, o compilador procuraria na superclasse um método com aquela
-assinatura exata, não acharia e daria erro de compilação na hora. Foi por isso que, além de
-corrigir a assinatura, coloquei `@Override` nos três `calcularPrecoAluguel`: a anotação não muda
-o comportamento, ela só faz o compilador conferir a intenção.
+Sobrescrita acontece quando a subclasse redefine um método herdado com a mesma assinatura. Sobrecarga ocorre quando o método possui o mesmo nome, mas parâmetros diferentes. Em `Serie`, `calcularPrecoAluguel(double desconto)` não sobrescrevia o método sem parâmetros de `Conteudo`. Retirar o parâmetro e adicionar `@Override` corrigiu o cálculo e faria o compilador identificar esse erro.
 
 ### 5. Onde blindar o objeto? (Aulas 3, 4 e 13)
 
-Aprendi na prática que depende do tipo de regra:
-
-- **No construtor** ficam as regras que o objeto precisa cumprir para existir. A duração menor
-ou igual a zero (bug11) entrou ali: um conteúdo com duração negativa não deveria nem ser criado.
-- **Nos setters** ficaria a mesma validação, para o objeto não ficar inválido depois de criado.
-Esse é o buraco que sobrou no `setDuracaoMinutos`.
-- **No método de negócio** ficam as regras que dependem do estado de outros objetos e do momento
-da operação. Créditos, classificação e disponibilidade são validados dentro do `alugar` porque
-dependem do usuário *e* do conteúdo juntos — não dá para validar isso no construtor de nenhum dos dois.
-
-Validar em um lugar só não bastou justamente por causa do `clean01`: como `duracaoMinutos` era
-`public`, qualquer código podia fazer `conteudo.duracaoMinutos = -5` e furar a validação do
-construtor. Encapsular o campo foi o que fez a validação valer de verdade.
+A duração foi validada em `Conteudo`, pois nenhum tipo de conteúdo deve aceitar duração menor ou igual a zero. O construtor usa o setter validado para impedir valores inválidos tanto na criação quanto em alterações posteriores. As regras de disponibilidade, idade e créditos ficaram em `Usuario.alugar`, pois dependem do momento do aluguel. Validar somente no controller não protegeria o objeto caso ele fosse usado por outra parte da aplicação.
 
 ### 6. Abstração e interface (Aulas 8 e 9)
 
-`Conteudo` é abstrata e define **o que todo conteúdo é**: tem título, categoria, duração,
-classificação e um preço de aluguel. É herança, relação de "é um" — `Filme` é um `Conteudo`.
-Como em Java só se herda de uma classe, isso define a identidade do objeto.
-
-`Promocionavel` é uma interface e define **algo que o conteúdo pode fazer**: participar de
-promoção. É opcional e transversal — `Filme` e `Serie` implementam, `Documentario` não. Uma classe
-pode implementar várias interfaces, então dá para ir somando comportamentos sem mexer na hierarquia.
-
-Se o documentário passasse a ter promoção, eu mudaria **uma linha** na declaração
-(`class Documentario extends Conteudo implements Promocionavel`) e adicionaria o método
-`aplicarPromocao`. Ficariam **intactos** `Conteudo`, `Filme`, `Serie`, os controllers, os
-repositories e o `calcularPrecoPromocional` — que testa `this instanceof Promocionavel` e
-passaria a funcionar para o documentário automaticamente, sem nenhum `if` novo.
-
-Isso mostra que o design está bom: o comportamento novo entra por uma classe só, sem efeito
-cascata. O que não estava bom era a classe abstrata ter um `return 9.90` concreto — isso não é
-abstração, é um preço de filme escondido na classe pai, e foi o que mascarou o bug02 e o bug04.
-Tornar o método abstrato obriga toda subclasse nova a declarar seu preço.
+`Conteudo` é abstrata porque reúne dados e comportamentos comuns de filmes, séries e documentários. `Promocionavel` representa apenas a capacidade de aplicar uma promoção. Se o documentário passasse a ter desconto, ele precisaria implementar essa interface e o método `aplicarPromocao`. As outras classes e o cálculo promocional de `Conteudo` poderiam continuar iguais.
 
 ---
 
